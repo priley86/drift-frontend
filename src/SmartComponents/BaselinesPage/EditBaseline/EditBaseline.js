@@ -1,154 +1,284 @@
-import React, { Component } from 'react';
-import PropTypes from 'prop-types';
-import { connect } from 'react-redux';
-import { Button } from '@patternfly/react-core';
-import { Table, TableBody, TableHeader } from '@patternfly/react-table';
-import { Skeleton, SkeletonSize } from '@redhat-cloud-services/frontend-components';
-import { AddCircleOIcon } from '@patternfly/react-icons';
+/*eslint-disable*/
+import React from 'react';
+import { Table, TableHeader, TableBody, RowWrapper, TableVariant, ExpandableRowContent } from '@patternfly/react-table';
+import {
+  editableTableBody,
+  editableRowWrapper,
+  inlineEditFormatterFactory,
+  TableEditConfirmation,
+  TableTextInput
+} from '@patternfly/react-inline-edit-extension';
+import { Dropdown, DropdownToggle, DropdownItem, Checkbox } from '@patternfly/react-core';
 
-import { baselinesPageActions } from '../redux';
-import { baselinesTableActions } from '../../BaselinesTable/redux';
+class EditBaseline extends React.Component {
+  constructor(props) {
+    super(props);
 
-class EditBaseline extends Component {
-    constructor(props) {
-        super(props);
-        this.finishBaselineEdit = this.finishBaselineEdit.bind(this);
-        this.renderRows = this.renderRows.bind(this);
-        this.renderLoadingRows = this.renderLoadingRows.bind(this);
-        this.renderTable = this.renderTable.bind(this);
-    }
+    this.makeId = ({ column, rowIndex, columnIndex, name }) =>
+      `${column.property}-${rowIndex}-${columnIndex}${name ? `-${name}` : ''}`;
 
-    finishBaselineEdit() {
-        const { clearBaselineData, toggleCreateBaseline, creatingNewBaseline } = this.props;
+    const childEditRenderer = (value, { column, rowIndex, rowData, columnIndex, activeEditId }) => (
+      <ExpandableRowContent>
+        {rowData.data.modules.map((module, idx) => {
+          const inlineStyle = {
+            marginLeft: idx && '1em',
+            display: 'inline-block',
+            width: '48%'
+          };
 
-        clearBaselineData();
+          const id = this.makeId({ rowIndex, columnIndex, column, name: `module-${idx}` });
 
-        if (creatingNewBaseline) {
-            toggleCreateBaseline();
-        }
-    }
+          return (
+            <TableTextInput
+              id={id}
+              key={id}
+              defaultValue={module}
+              style={inlineStyle}
+              onBlur={newValue =>
+                this.onChange(newValue, {
+                  rowIndex,
+                  moduleIndex: idx
+                })
+              }
+              autoFocus={activeEditId === id}
+            />
+          );
+        })}
+      </ExpandableRowContent>
+    );
 
-    renderRows() {
-        const { baselineData } = this.props;
-        let rows = [];
-
-        if (!baselineData) {
-            rows = [];
-        } else {
-            baselineData.baseline_facts.forEach(function(fact) {
-                let row = [];
-                row.push(fact.name);
-                row.push(fact.value);
-                rows.push(row);
-            });
-        }
-
-        return rows;
-    }
-
-    renderLoadingRows() {
-        let rows = [];
-        let rowData = [];
-
-        for (let i = 0; i < 2; i += 1) {
-            rowData.push(<Skeleton size={ SkeletonSize.md } />);
-        }
-
-        for (let i = 0; i < 5; i += 1) {
-            rows.push(rowData);
-        }
-
-        return rows;
-    }
-
-    renderTable() {
-        const { loading } = this.props;
-        let columns = [ 'Fact', 'Value' ];
-        let table;
-
-        if (loading === false) {
-            let rows = this.renderRows();
-
-            table = <Table
-                cells={ columns }
-                rows={ rows }
-            >
-                <TableHeader />
-                <TableBody />
-            </Table>;
-        } else {
-            let rows = this.renderLoadingRows();
-
-            table = <Table
-                cells={ columns }
-                rows={ rows }
-            >
-                <TableHeader />
-                <TableBody />
-            </Table>;
-        }
-
-        return table;
-    }
-
-    render() {
-        const { loading, baselineData } = this.props;
-        let baselineName;
-
-        if (baselineData) {
-            baselineName = baselineData.display_name;
-        } else {
-            baselineName = 'Create baseline name';
-        }
-
-        return (
-            <React.Fragment>
-                { baselineName }
-                { this.renderTable() }
-                { !loading ?
-                    <div>
-                        <Button
-                            className="button-margin"
-                            isBlock
-                        >
-                            <AddCircleOIcon/>
-                            Add fact
-                        </Button>
-                        <Button
-                            className="button-margin"
-                            style={ { float: 'right' } }
-                            variant='primary'
-                            onClick={ this.finishBaselineEdit }>
-                            Finish
-                        </Button>
-                    </div> : null
-                }
-            </React.Fragment>
-        );
-    }
-}
-
-EditBaseline.propTypes = {
-    toggleCreateBaseline: PropTypes.func,
-    clearBaselineData: PropTypes.func,
-    creatingNewBaseline: PropTypes.bool,
-    baselineData: PropTypes.object,
-    loading: PropTypes.bool
-};
-
-function mapStateToProps(state) {
-    return {
-        creatingNewBaseline: state.baselinesPageState.creatingNewBaseline,
-        baselineData: state.baselinesTableState.baselineData,
-        loading: state.baselinesTableState.loading
+    const parentEditRenderer = (value, { column, rowIndex, columnIndex, activeEditId }) => {
+      const id = this.makeId({ rowIndex, columnIndex, column, name: 'parent-repo' });
+      return (
+        <TableTextInput
+          id={id}
+          key={id}
+          defaultValue={value}
+          onBlur={newValue =>
+            this.onChange(newValue, {
+              rowIndex,
+              columnIndex
+            })
+          }
+          autoFocus={activeEditId === id}
+        />
+      );
     };
-}
 
-function mapDispatchToProps(dispatch) {
-    return {
-        toggleCreateBaseline: () => dispatch(baselinesPageActions.toggleCreateBaseline()),
-        clearBaselineData: () => dispatch(baselinesTableActions.clearBaselineData())
+    const textInputFormatter = inlineEditFormatterFactory({
+      renderValue: (value, { rowData }) =>
+        rowData.hasOwnProperty('parent') ? (
+          <ExpandableRowContent>{rowData.data.modules.filter(a => a).join(', ')}</ExpandableRowContent>
+        ) : (
+          value
+        ),
+      renderEdit: (value, { column, columnIndex, rowIndex, rowData }, { activeEditId }) => {
+        const renderer = rowData.hasOwnProperty('parent') ? childEditRenderer : parentEditRenderer;
+        return renderer(value, { rowData, column, rowIndex, columnIndex, activeEditId });
+      }
+    });
+
+    this.state = {
+      columns: [
+        {
+          title: 'Repositories',
+          cellFormatters: [textInputFormatter]
+        },
+        {
+          title: 'Branches'
+        },
+        'Pull requests',
+        {
+          title: 'Workspaces',
+          cellFormatters: [textInputFormatter]
+        },
+        {
+          title: 'Last Commit',
+          cellFormatters: [textInputFormatter]
+        }
+      ],
+      rows: [
+        {
+          cells: ['one', 'master', 7, 'Grey', 'five'],
+          isOpen: false
+        },
+        {
+          cells: [null],
+          data: {
+            modules: ['', '']
+          },
+          parent: 0,
+          isEditableTogetherWithParent: true
+        },
+        {
+          cells: ['uno', 'v2.3.0', 125, 'Orange', 'cinco'],
+          isOpen: false
+        },
+        {
+          cells: [null],
+          data: {
+            modules: ['storage', '']
+          },
+          parent: 2
+        },
+        {
+          cells: ['', 'master', 0, 'Blue', ''],
+          isOpen: true
+        },
+        {
+          cells: [null],
+          data: {
+            modules: ['security', 'network']
+          },
+          parent: 4,
+          isEditableTogetherWithParent: true
+        }
+      ],
+      editedRowsBackup: null,
+      activeEditId: null
     };
+    this.onChange = (value, { rowIndex, columnIndex, moduleIndex }) => {
+      this.setState(({ rows }) => {
+        rows = [...rows];
+        const row = rows[rowIndex];
+        if (moduleIndex != null) {
+          row.data.modules[moduleIndex] = value;
+        } else {
+          const shiftedColumnIndex = columnIndex - 1; // to take Expandable Column into account;
+          row.cells[shiftedColumnIndex] = value;
+        }
+        return { rows, activeEditId: null };
+      });
+    };
+    this.onEditCellClicked = (event, clickedRow, { rowIndex, columnIndex, elementId }) => {
+      const EXPANDABLE_COL = 0;
+      const ACTIONS_COL = 6;
+
+      if (elementId !== this.state.activeEditId && clickedRow.isEditing && columnIndex !== ACTIONS_COL) {
+        this.setState(({ rows }) => ({
+          activeEditId: elementId,
+          rows: rows.map((row, id) => {
+            if (id === rowIndex && columnIndex === EXPANDABLE_COL && row.hasOwnProperty('isOpen')) {
+              row.isOpen = !row.isOpen;
+            }
+            return row;
+          })
+        }));
+      }
+    };
+
+    // depth max 1 in this example
+    this.getParentId = (rowId, rows) => (rows[rowId].parent === undefined ? rowId : rows[rowId].parent);
+    this.getChildIdId = (rowId, rows) =>
+      rows[rowId].parent === undefined
+        ? rows.map((row, idx) => (row.parent === rowId ? idx : null)).find(idx => idx !== null)
+        : rowId;
+
+    this.onEditActionClick = (event, rowId) => {
+      this.setState(({ rows, editedRowBackup }) => {
+        if (!editedRowBackup) {
+          const childId = this.getChildIdId(rowId, rows);
+          const parentId = this.getParentId(rowId, rows);
+
+          const backup = rows[childId].isEditableTogetherWithParent
+            ? {
+                [parentId]: rows[parentId],
+                [childId]: rows[childId]
+              }
+            : {
+                [rowId]: rows[rowId]
+              };
+
+          return {
+            editedRowsBackup: JSON.parse(JSON.stringify(backup)), // clone
+            rows: rows.map((row, id) => {
+              row.isEditing = !!backup[id];
+              return row;
+            })
+          };
+        }
+        return undefined;
+      });
+    };
+
+    this.onEditConfirmed = () => {
+      this.setState(({ rows, editedRowsBackup }) => {
+        rows = [...rows];
+        Object.keys(editedRowsBackup).forEach(key => {
+          rows[key].isEditing = false;
+        });
+
+        return {
+          rows,
+          editedRowsBackup: null,
+          activeEditId: null
+        };
+      });
+    };
+
+    this.onEditCanceled = () => {
+      this.setState(({ rows, editedRowsBackup }) => {
+        rows = [...rows];
+        Object.keys(editedRowsBackup).forEach(key => {
+          rows[key] = editedRowsBackup[key];
+        });
+        return {
+          rows,
+          editedRowsBackup: null,
+          activeEditId: null
+        };
+      });
+    };
+
+    this.onCollapse = (event, rowKey, isOpen) => {
+      const { rows } = this.state;
+      /**
+       * Please do not use rowKey as row index for more complex tables.
+       * Rather use some kind of identifier like ID passed with each row.
+       */
+      rows[rowKey].isOpen = isOpen;
+      this.setState({
+        rows
+      });
+    };
+
+    this.actionResolver = rowData =>
+      rowData.isTableEditing
+        ? null
+        : [
+            {
+              title: 'Edit',
+              onClick: this.onEditActionClick
+            }
+          ];
+  }
+
+  render() {
+    const { activeEditId, columns, rows } = this.state;
+    const editConfig = {
+      activeEditId,
+      onEditCellClicked: this.onEditCellClicked,
+      editConfirmationType: TableEditConfirmation.ROW,
+      onEditConfirmed: this.onEditConfirmed,
+      onEditCanceled: this.onEditCanceled
+    };
+    const ComposedBody = editableTableBody(TableBody);
+    const ComposedRowWrapper = editableRowWrapper(RowWrapper);
+
+    return (
+      <Table
+        caption="Editable Table With Collapsible Rows"
+        cells={columns}
+        rows={rows}
+        rowWrapper={ComposedRowWrapper}
+        onCollapse={this.onCollapse}
+        actionResolver={this.actionResolver}
+      >
+        <TableHeader />
+        <ComposedBody editConfig={editConfig} />
+      </Table>
+    );
+  }
 }
 
-export default connect(mapStateToProps, mapDispatchToProps)(EditBaseline);
+export default EditBaseline;
